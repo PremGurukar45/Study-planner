@@ -110,14 +110,60 @@ export default function SetupPage() {
     );
   }
 
-  function generatePlan() {
-    setGenerating(true);
+  async function generatePlan() {
+  setGenerating(true);
 
-    setTimeout(() => {
-      setGenerating(false);
-      window.location.href = "/planner";
-    }, 1200);
+  try {
+    const skillMap: Record<number, "beginner" | "intermediate" | "advanced"> = {
+      1: "beginner",
+      2: "beginner",
+      3: "intermediate",
+      4: "advanced",
+      5: "advanced",
+    };
+
+    const formattedSubjects = subjects.map((subject) => {
+      const exam = exams.find((exam) => exam.subject === subject.name);
+
+      return {
+        name: subject.name,
+        skillLevel: skillMap[subject.level],
+        examDate: exam?.date || new Date().toISOString().split("T")[0],
+      };
+    });
+
+    const response = await fetch(
+      "http://localhost:5001/api/planner/generate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subjects: formattedSubjects,
+          dailyHours: hours,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to generate study plan");
+    }
+
+    const data = await response.json();
+
+    console.log("Generated Study Plan:", data);
+
+    localStorage.setItem("studyPlan", JSON.stringify(data.plan));
+
+    window.location.href = "/planner";
+  } catch (error) {
+    console.error("Planner generation failed:", error);
+    alert("Could not generate the study plan. Please try again.");
+  } finally {
+    setGenerating(false);
   }
+}
 
   return (
     <AppShell>

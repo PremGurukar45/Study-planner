@@ -13,9 +13,17 @@ import {
   Target,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/layout/AppShell";
+
+type BackendPlanItem = {
+  subject: string;
+  skillLevel: string;
+  examDate: string;
+  daysUntilExam: number;
+  dailyStudyMinutes: number;
+};
 
 type StudyTask = {
   id: number;
@@ -26,60 +34,11 @@ type StudyTask = {
   type: string;
   priority: "High" | "Medium" | "Low";
   completed: boolean;
+  daysUntilExam: number;
+  skillLevel: string;
+  examDate: string;
+  dailyStudyMinutes: number;
 };
-
-const initialTasks: StudyTask[] = [
-  {
-    id: 1,
-    time: "08:00",
-    duration: "45 min",
-    subject: "Mathematics",
-    topic: "Differential Equations",
-    type: "Concept Learning",
-    priority: "High",
-    completed: true,
-  },
-  {
-    id: 2,
-    time: "10:00",
-    duration: "60 min",
-    subject: "Physics",
-    topic: "Electromagnetic Induction",
-    type: "Deep Study",
-    priority: "High",
-    completed: false,
-  },
-  {
-    id: 3,
-    time: "14:30",
-    duration: "45 min",
-    subject: "Computer Science",
-    topic: "Binary Trees",
-    type: "Practice",
-    priority: "Medium",
-    completed: false,
-  },
-  {
-    id: 4,
-    time: "17:00",
-    duration: "30 min",
-    subject: "Physics",
-    topic: "Formula Revision",
-    type: "Revision",
-    priority: "Medium",
-    completed: false,
-  },
-  {
-    id: 5,
-    time: "20:00",
-    duration: "35 min",
-    subject: "Mathematics",
-    topic: "Problem Set",
-    type: "Practice",
-    priority: "Low",
-    completed: false,
-  },
-];
 
 const days = [
   { day: "MON", date: "21" },
@@ -91,20 +50,93 @@ const days = [
   { day: "SUN", date: "27" },
 ];
 
+function getPriority(daysUntilExam: number): "High" | "Medium" | "Low" {
+  if (daysUntilExam <= 10) return "High";
+  if (daysUntilExam <= 20) return "Medium";
+  return "Low";
+}
+
+function formatTime(index: number) {
+  const hour = 9 + index * 2;
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
 export default function PlannerPage() {
   const [selectedDay, setSelectedDay] = useState(3);
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState<StudyTask[]>([]);
   const [generating, setGenerating] = useState(false);
 
+  useEffect(() => {
+    const savedPlan = localStorage.getItem("studyPlan");
+
+    if (!savedPlan) return;
+
+    try {
+      const plan: BackendPlanItem[] = JSON.parse(savedPlan);
+
+      const formattedTasks: StudyTask[] = plan.map((item, index) => ({
+        id: index + 1,
+        time: formatTime(index),
+        duration: `${item.dailyStudyMinutes} min`,
+        dailyStudyMinutes: item.dailyStudyMinutes,
+        subject: item.subject,
+        topic: "Personalized Study Session",
+        type:
+          item.skillLevel.toLowerCase() === "beginner"
+            ? "Concept Learning"
+            : item.skillLevel.toLowerCase() === "intermediate"
+              ? "Practice & Learning"
+              : "Advanced Practice",
+        priority: getPriority(item.daysUntilExam),
+        completed: false,
+        daysUntilExam: item.daysUntilExam,
+        skillLevel: item.skillLevel,
+        examDate: item.examDate,
+      }));
+
+      setTasks(formattedTasks);
+    } catch (error) {
+      console.error("Failed to load study plan:", error);
+    }
+  }, []);
+
   const completedTasks = tasks.filter((task) => task.completed).length;
+
+  const totalStudyMinutes = useMemo(() => {
+    return tasks.reduce(
+      (total, task) => total + task.dailyStudyMinutes,
+      0
+    );
+  }, [tasks]);
+
+  const priorityScore = useMemo(() => {
+    if (tasks.length === 0) return "0.0";
+
+    const score =
+      tasks.reduce((total, task) => {
+        if (task.priority === "High") return total + 10;
+        if (task.priority === "Medium") return total + 7;
+        return total + 4;
+      }, 0) / tasks.length;
+
+    return score.toFixed(1);
+  }, [tasks]);
+
+  const highestPriorityTask = useMemo(() => {
+    if (tasks.length === 0) return null;
+
+    return [...tasks].sort(
+      (a, b) => a.daysUntilExam - b.daysUntilExam
+    )[0];
+  }, [tasks]);
 
   function toggleTask(id: number) {
     setTasks((current) =>
       current.map((task) =>
         task.id === id
           ? { ...task, completed: !task.completed }
-          : task,
-      ),
+          : task
+      )
     );
   }
 
@@ -113,12 +145,16 @@ export default function PlannerPage() {
 
     setTimeout(() => {
       setGenerating(false);
-    }, 1400);
+    }, 1000);
   }
+
+  const studyHours = Math.floor(totalStudyMinutes / 60);
+  const studyMinutes = totalStudyMinutes % 60;
 
   return (
     <AppShell>
       <div className="space-y-6 pb-12">
+
         {/* Header */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}
@@ -139,7 +175,7 @@ export default function PlannerPage() {
                 </span>
 
                 <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-2 py-1 text-[8px] tracking-wider text-emerald-300">
-                  OPTIMIZED
+                  LIVE PLAN
                 </span>
               </div>
 
@@ -149,7 +185,7 @@ export default function PlannerPage() {
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/40">
                 Your schedule is dynamically organized around your exams,
-                current skill levels, study time, and recent performance.
+                current skill levels, study time, and priorities.
               </p>
             </div>
 
@@ -163,35 +199,36 @@ export default function PlannerPage() {
                 size={15}
                 className={generating ? "animate-spin" : ""}
               />
+
               {generating ? "Recalculating..." : "Regenerate Plan"}
             </button>
           </div>
         </motion.section>
 
-        {/* AI metrics */}
+        {/* Metrics */}
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Metric
             icon={<Target size={17} />}
-            label="Plan Confidence"
-            value="94%"
+            label="Plan Status"
+            value={tasks.length > 0 ? "Ready" : "Waiting"}
           />
 
           <Metric
             icon={<Clock3 size={17} />}
             label="Study Today"
-            value="3h 35m"
+            value={`${studyHours}h ${studyMinutes}m`}
           />
 
           <Metric
             icon={<Flame size={17} />}
             label="Priority Score"
-            value="8.7"
+            value={priorityScore}
           />
 
           <Metric
             icon={<Zap size={17} />}
-            label="Adaptation"
-            value="+12%"
+            label="Subjects"
+            value={`${tasks.length}`}
           />
         </section>
 
@@ -200,7 +237,7 @@ export default function PlannerPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-[9px] tracking-[0.25em] text-white/30">
-                SEPTEMBER 2026
+                STUDY WEEK
               </p>
 
               <h2 className="mt-1 text-lg font-semibold">
@@ -247,7 +284,9 @@ export default function PlannerPage() {
                   {day.day}
                 </p>
 
-                <p className="mt-1 text-lg font-semibold">{day.date}</p>
+                <p className="mt-1 text-lg font-semibold">
+                  {day.date}
+                </p>
 
                 <div className="mx-auto mt-2 flex justify-center gap-1">
                   <span className="h-1 w-1 rounded-full bg-violet-400" />
@@ -266,136 +305,170 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        {/* Main planner */}
+        {/* Main Planner */}
         <section className="grid gap-6 xl:grid-cols-[1fr_350px]">
+
           {/* Timeline */}
           <div className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-5 backdrop-blur-2xl md:p-6">
             <div className="mb-7 flex items-center justify-between">
               <div>
                 <p className="text-[9px] tracking-[0.25em] text-violet-300">
-                  THURSDAY · 24 SEPTEMBER
+                  TODAY
                 </p>
 
                 <h2 className="mt-1 text-xl font-semibold">
-                  Today's Schedule
+                  Today&apos;s Schedule
                 </h2>
               </div>
 
               <div className="text-right">
                 <p className="text-xl font-bold">
                   {completedTasks}
-                  <span className="text-white/25">/{tasks.length}</span>
+                  <span className="text-white/25">
+                    /{tasks.length}
+                  </span>
                 </p>
-                <p className="text-[9px] text-white/30">completed</p>
+
+                <p className="text-[9px] text-white/30">
+                  completed
+                </p>
               </div>
             </div>
 
-            <div className="relative">
-              <div className="absolute bottom-0 left-[57px] top-0 w-px bg-gradient-to-b from-violet-500/40 via-white/10 to-transparent" />
+            {tasks.length === 0 ? (
+              <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-8 text-center">
+                <Brain
+                  className="mx-auto text-violet-300"
+                  size={30}
+                />
 
-              <div className="space-y-4">
-                {tasks.map((task, index) => (
-                  <motion.div
-                    key={task.id}
-                    initial={{ opacity: 0, x: -15 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.08 }}
-                    className="relative flex gap-4"
-                  >
-                    <div className="w-10 shrink-0 pt-4 text-right">
-                      <span className="text-[10px] text-white/25">
-                        {task.time}
-                      </span>
-                    </div>
+                <h3 className="mt-4 text-sm font-semibold">
+                  No study plan found
+                </h3>
 
-                    <div className="relative flex w-5 shrink-0 justify-center">
-                      <div
-                        className={`relative z-10 mt-4 h-3 w-3 rounded-full border-2 ${
-                          task.completed
-                            ? "border-emerald-400 bg-emerald-400/20"
-                            : "border-violet-400 bg-[#08080f]"
-                        }`}
-                      />
-                    </div>
+                <p className="mt-2 text-xs text-white/35">
+                  Go to Setup and generate your personalized study plan.
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute bottom-0 left-[57px] top-0 w-px bg-gradient-to-b from-violet-500/40 via-white/10 to-transparent" />
 
+                <div className="space-y-4">
+                  {tasks.map((task, index) => (
                     <motion.div
-                      whileHover={{ x: 4 }}
-                      className={`flex min-w-0 flex-1 items-center gap-4 rounded-2xl border p-4 transition ${
-                        task.completed
-                          ? "border-emerald-400/10 bg-emerald-400/[0.025]"
-                          : "border-white/[0.07] bg-black/20 hover:border-violet-400/20"
-                      }`}
+                      key={task.id}
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.08 }}
+                      className="relative flex gap-4"
                     >
-                      <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-400/15 bg-violet-500/10 text-violet-300 sm:flex">
-                        {task.completed ? (
-                          <CheckCircle2 size={19} />
-                        ) : (
-                          <Brain size={19} />
-                        )}
+                      <div className="w-10 shrink-0 pt-4 text-right">
+                        <span className="text-[10px] text-white/25">
+                          {task.time}
+                        </span>
                       </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] text-violet-300">
-                            {task.subject}
-                          </span>
-
-                          <PriorityBadge priority={task.priority} />
-                        </div>
-
-                        <h3
-                          className={`mt-1 truncate text-sm font-semibold ${
+                      <div className="relative flex w-5 shrink-0 justify-center">
+                        <div
+                          className={`relative z-10 mt-4 h-3 w-3 rounded-full border-2 ${
                             task.completed
-                              ? "text-white/40 line-through"
-                              : ""
+                              ? "border-emerald-400 bg-emerald-400/20"
+                              : "border-violet-400 bg-[#08080f]"
                           }`}
-                        >
-                          {task.topic}
-                        </h3>
-
-                        <div className="mt-2 flex items-center gap-3 text-[10px] text-white/25">
-                          <span>{task.type}</span>
-                          <span>•</span>
-                          <span>{task.duration}</span>
-                        </div>
+                        />
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => toggleTask(task.id)}
-                        className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-[10px] transition ${
+                      <motion.div
+                        whileHover={{ x: 4 }}
+                        className={`flex min-w-0 flex-1 items-center gap-4 rounded-2xl border p-4 transition ${
                           task.completed
-                            ? "border border-emerald-400/15 bg-emerald-400/5 text-emerald-300"
-                            : "border border-white/10 bg-white/[0.03] text-white/40 hover:border-violet-400/20 hover:text-white"
+                            ? "border-emerald-400/10 bg-emerald-400/[0.025]"
+                            : "border-white/[0.07] bg-black/20 hover:border-violet-400/20"
                         }`}
                       >
-                        {task.completed ? (
-                          <>
-                            <CheckCircle2 size={13} />
-                            Done
-                          </>
-                        ) : (
-                          <>
-                            <Play size={12} />
-                            Start
-                          </>
-                        )}
-                      </button>
+                        <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-400/15 bg-violet-500/10 text-violet-300 sm:flex">
+                          {task.completed ? (
+                            <CheckCircle2 size={19} />
+                          ) : (
+                            <Brain size={19} />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] text-violet-300">
+                              {task.subject}
+                            </span>
+
+                            <PriorityBadge
+                              priority={task.priority}
+                            />
+                          </div>
+
+                          <h3
+                            className={`mt-1 truncate text-sm font-semibold ${
+                              task.completed
+                                ? "text-white/40 line-through"
+                                : ""
+                            }`}
+                          >
+                            {task.topic}
+                          </h3>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-white/25">
+                            <span>{task.type}</span>
+                            <span>•</span>
+                            <span>{task.duration}</span>
+                            <span>•</span>
+                            <span>
+                              Exam in {task.daysUntilExam} days
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleTask(task.id)}
+                          className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-[10px] transition ${
+                            task.completed
+                              ? "border border-emerald-400/15 bg-emerald-400/5 text-emerald-300"
+                              : "border border-white/10 bg-white/[0.03] text-white/40 hover:border-violet-400/20 hover:text-white"
+                          }`}
+                        >
+                          {task.completed ? (
+                            <>
+                              <CheckCircle2 size={13} />
+                              Done
+                            </>
+                          ) : (
+                            <>
+                              <Play size={12} />
+                              Start
+                            </>
+                          )}
+                        </button>
+                      </motion.div>
                     </motion.div>
-                  </motion.div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* AI reasoning */}
+          {/* AI Reasoning */}
           <div className="space-y-6">
+
             <div className="relative overflow-hidden rounded-3xl border border-violet-400/15 bg-gradient-to-br from-violet-500/[0.12] via-white/[0.025] to-cyan-500/[0.05] p-6 backdrop-blur-2xl">
               <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-violet-500/20 blur-[70px]" />
 
               <div className="relative">
                 <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-violet-300" />
+                  <Sparkles
+                    size={16}
+                    className="text-violet-300"
+                  />
+
                   <span className="text-[9px] tracking-[0.25em] text-violet-300">
                     WHY THIS PLAN?
                   </span>
@@ -405,38 +478,72 @@ export default function PlannerPage() {
                   AI reasoning
                 </h2>
 
-                <p className="mt-3 text-xs leading-6 text-white/40">
-                  Physics receives the highest priority because its exam is
-                  approaching and your current skill level is below the
-                  target threshold.
-                </p>
+                {highestPriorityTask ? (
+                  <>
+                    <p className="mt-3 text-xs leading-6 text-white/40">
+                      <strong className="text-white/70">
+                        {highestPriorityTask.subject}
+                      </strong>{" "}
+                      currently receives the highest priority because its
+                      exam is in{" "}
+                      <strong className="text-violet-300">
+                        {highestPriorityTask.daysUntilExam} days
+                      </strong>
+                      .
+                    </p>
 
-                <div className="mt-5 space-y-3">
-                  <Reason
-                    label="Exam proximity"
-                    value="High"
-                    width="88%"
-                  />
+                    <div className="mt-5 space-y-3">
+                      <Reason
+                        label="Exam proximity"
+                        value={highestPriorityTask.priority}
+                        width={
+                          highestPriorityTask.priority === "High"
+                            ? "88%"
+                            : highestPriorityTask.priority === "Medium"
+                              ? "64%"
+                              : "35%"
+                        }
+                      />
 
-                  <Reason
-                    label="Skill gap"
-                    value="Medium"
-                    width="64%"
-                  />
+                      <Reason
+                        label="Current skill"
+                        value={highestPriorityTask.skillLevel}
+                        width={
+                          highestPriorityTask.skillLevel.toLowerCase() ===
+                          "beginner"
+                            ? "80%"
+                            : highestPriorityTask.skillLevel.toLowerCase() ===
+                                "intermediate"
+                              ? "55%"
+                              : "30%"
+                        }
+                      />
 
-                  <Reason
-                    label="Recent performance"
-                    value="Good"
-                    width="42%"
-                  />
-                </div>
+                      <Reason
+                        label="Daily allocation"
+                        value={`${highestPriorityTask.dailyStudyMinutes} min`}
+                        width={`${Math.min(
+                          100,
+                          (highestPriorityTask.dailyStudyMinutes / 180) * 100
+                        )}%`}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-3 text-xs text-white/40">
+                    Generate a study plan to see AI reasoning.
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Focus */}
             <div className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-6 backdrop-blur-2xl">
               <div className="flex items-center gap-2">
-                <Target size={16} className="text-cyan-300" />
+                <Target
+                  size={16}
+                  className="text-cyan-300"
+                />
 
                 <span className="text-[9px] tracking-[0.25em] text-cyan-300">
                   FOCUS MODE
@@ -447,27 +554,38 @@ export default function PlannerPage() {
                 Next session
               </h2>
 
-              <div className="mt-5 rounded-2xl border border-white/[0.07] bg-black/20 p-4">
-                <p className="text-[10px] text-white/30">
-                  10:00 — 11:00
+              {highestPriorityTask ? (
+                <>
+                  <div className="mt-5 rounded-2xl border border-white/[0.07] bg-black/20 p-4">
+                    <p className="text-[10px] text-white/30">
+                      {highestPriorityTask.time} ·{" "}
+                      {highestPriorityTask.duration}
+                    </p>
+
+                    <h3 className="mt-2 text-sm font-semibold">
+                      {highestPriorityTask.topic}
+                    </h3>
+
+                    <p className="mt-1 text-[10px] text-violet-300">
+                      {highestPriorityTask.subject} ·{" "}
+                      {highestPriorityTask.type}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-medium transition hover:bg-violet-500"
+                  >
+                    <Play size={14} />
+                    Start Focus Session
+                  </button>
+                </>
+              ) : (
+                <p className="mt-5 text-xs text-white/35">
+                  Your next focus session will appear after generating a
+                  plan.
                 </p>
-
-                <h3 className="mt-2 text-sm font-semibold">
-                  Electromagnetic Induction
-                </h3>
-
-                <p className="mt-1 text-[10px] text-violet-300">
-                  Physics · Deep Study
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-medium transition hover:bg-violet-500"
-              >
-                <Play size={14} />
-                Start Focus Session
-              </button>
+              )}
             </div>
           </div>
         </section>
